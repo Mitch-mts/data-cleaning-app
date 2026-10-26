@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field, checkbox, column_multiselect, column_select, choice_select %}
+{% block title %}Cleaning options{% endblock %}
+{% block content %}
+<div class="mb-3">
+  <h1 class="h3 mb-1">Cleaning options</h1>
+  <p class="text-muted mb-0">
+    Only the operations you select are applied, in the order shown. Your original file is never changed,
+    so you can come back and try different options.
+  </p>
+</div>
+
+{% if errors %}
+<div class="alert alert-danger" role="alert">
+  <strong>Please fix the following:</strong>
+  <ul class="mb-0 mt-1">{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="alert alert-light border small">
+  <strong>Columns selected for cleaning ({{ scope|length }} of {{ columns|length }}):</strong>
+  {{ scope|join(", ") }}
+  · <a href="{{ url_for('main.overview') }}">change</a>
+</div>
+
+<form method="post" action="{{ url_for('main.clean') }}" class="needs-loading" novalidate>
+  {{ csrf_field() }}
+
+  <section class="card shadow-sm mb-3">
+    <div class="card-header bg-white"><h2 class="h5 mb-0"><span class="section-number">1</span> Text cleaning</h2></div>
+    <div class="card-body row g-3">
+      <div class="col-md-6">
+        {{ column_multiselect(form, "text_columns", "Text columns", scope,
+           "These columns are used by text cleaning and by the text missing-value fill below.") }}
+      </div>
+      <div class="col-md-6">
+        {{ checkbox(form, "text_trim", "Trim leading and trailing whitespace") }}
+        {{ checkbox(form, "text_empty_to_missing", "Treat empty and whitespace-only text as missing") }}
+        <div class="mt-2">
+          {{ choice_select(form, "text_case", "Capitalisation", [
+              ("none", "Keep as is"), ("lower", "lower case"), ("upper", "UPPER CASE"), ("title", "Title Case")]) }}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card shadow-sm mb-3">
+    <div class="card-header bg-white"><h2 class="h5 mb-0"><span class="section-number">2</span> Data types</h2></div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle conversion-table">
+          <thead class="table-light">
+            <tr><th scope="col">Column</th><th scope="col">Current type</th><th scope="col">Convert to</th></tr>
+          </thead>
+          <tbody>
+            {% for column in columns %}
+              {% if column in scope %}
+              {% set field = "convert_type_" ~ loop.index0 %}
+              {% set p = column_profiles[column] %}
+              <tr>
+                <td><label for="{{ field }}" class="column-name">{{ column }}</label>
+                  {% if p.warning %}<span class="badge text-bg-warning ms-1">mixed types</span>{% endif %}</td>
+                <td><span class="badge text-bg-light border">{{ p.dtype }}</span></td>
+                <td class="type-select-cell">
+                  <select class="form-select form-select-sm" id="{{ field }}" name="{{ field }}">
+                    {% for value, text in [("keep", "Keep current type"), ("integer", "Integer"), ("float", "Decimal (float)"), ("string", "Text (string)"), ("datetime", "Date / time")] %}
+                    <option value="{{ value }}" {% if (form.get(field) or "keep") == value %}selected{% endif %}>{{ text }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+              </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="col-md-6">
+        {{ choice_select(form, "conversion_errors", "When a value cannot be converted", [
+            ("coerce", "Set it to missing and list it in the report"),
+            ("skip", "Leave that column unchanged and list the problem values")]) }}
+      </div>
+    </div>
+  </section>
+
+  <section class="card shadow-sm mb-3">
+    <div class="card-header bg-white"><h2 class="h5 mb-0"><span class="section-number">3</span> Missing values</h2></div>
+    <div class="card-body row g-3">
+      <div class="col-12 small text-muted">
+        Missing values in selected columns:
+        {% for column in scope %}
+          {% set p = column_profiles[column] %}
+          <span class="badge {% if p.missing %}text-bg-warning{% else %}text-bg-light border{% endif %}">{{ column }}: {{ p.missing }}</span>
+        {% endfor %}
+      </div>
+      <div class="col-md-6">
+        {{ checkbox(form, "missing_threshold_enabled", "Remove columns with too many missing values") }}
+        <div class="input-group input-group-sm mt-1 threshold-input">
+          <span class="input-group-text">more than</span>
+          <input type="number" class="form-control" name="missing_threshold" id="missing_threshold"
+                 min="0" max="100" step="1" value="{{ form.get('missing_threshold', '50') }}"
+                 aria-label="Missing value threshold percent">
+          <span class="input-group-text">% missing</span>
+        </div>
+      </div>
+      <div class="col-md-6">
+        {{ choice_select(form, "missing_numeric_fill", "Fill missing numbers with", [
+            ("none", "Do not fill"), ("mean", "Column mean"), ("median", "Column median")]) }}
+      </div>
+      <div class="col-md-6">
+        {{ choice_select(form, "missing_text_fill", "Fill missing text with", [
+            ("none", "Do not fill"), ("mode", "Most frequent value"), ("value", "A value I choose")]) }}
+        <input type="text" class="form-control mt-2" name="missing_text_fill_value" maxlength="200"
+               placeholder="Fill value, e.g. Unknown" value="{{ form.get('missing_text_fill_value', '') }}"
+               aria-label="Text fill value">
+      </div>
+      <div class="col-md-6">
+        {{ choice_select(form, "missing_row_action", "Rows that still have missing values", [
+            ("keep", "Keep them"), ("drop", "Remove them")]) }}
+        <div class="form-text">Removal only looks at the selected columns and happens after filling.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card shadow-sm mb-3">
+    <div class="card-header bg-white"><h2 class="h5 mb-0"><span class="section-number">4</span> Duplicate rows</h2></div>
+    <div class="card-body row g-3">
+      <div class="col-md-6">
+        {{ checkbox(form, "duplicates_remove", "Remove duplicate rows (keep the first occurrence)") }}
+      </div>
+      <div class="col-md-6">
+        {{ column_multiselect(form, "duplicates_subset", "Compare only these columns (optional)", columns,
+           "Leave empty to compare entire rows.") }}
+      </div>
+    </div>
+  </section>
+
+  <section class="card shadow-sm mb-3">
+    <div class="card-header bg-white"><h2 class="h5 mb-0"><span class="section-number">5</span> Outliers (IQR method)</h2></div>
+    <div class="card-body row g-3">
+      <div class="col-md-6">
+        {{ column_multiselect(form, "outlier_columns", "Check these numeric columns", scope,
+           "Values below Q1 − k×IQR or above Q3 + k×IQR are flagged in the report.") }}
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="outlier_multiplier">IQR multiplier (k)</label>
+        <input type="number" class="form-control" id="outlier_multiplier" name="outlier_multiplier"
+               min="0.1" max="10" step="0.1" value="{{ form.get('outlier_multiplier', '1.5') }}">
+        <div class="form-text mb-2">1.5 is the common default; 3 flags only extreme values.</div>
+        <div class="border border-danger-subtle rounded p-2">
+          {{ checkbox(form, "outlier_remove", "Also remove rows that contain outliers",
+             "Outliers are only reported unless you tick this box.") }}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card shadow-sm mb-3">
+    <div class="card-header bg-white"><h2 class="h5 mb-0"><span class="section-number">6</span> Filter and sort</h2></div>
+    <div class="card-body row g-3">
+      <div class="col-md-6">
+        <h3 class="h6">Numeric range filter</h3>
+        {{ column_select(form, "filter_numeric_column", "Keep rows where column", columns, "— no numeric filter —") }}
+        <div class="row g-2 mt-1">
+          <div class="col">
+            <input type="number" step="any" class="form-control" name="filter_numeric_min" placeholder="Minimum"
+                   value="{{ form.get('filter_numeric_min', '') }}" aria-label="Minimum value">
+          </div>
+          <div class="col">
+            <input type="number" step="any" class="form-control" name="filter_numeric_max" placeholder="Maximum"
+                   value="{{ form.get('filter_numeric_max', '') }}" aria-label="Maximum value">
+          </div>
+        </div>
+        <div class="form-text">Rows with a missing value in this column are removed too.</div>
+      </div>
+      <div class="col-md-6">
+        <h3 class="h6">Exact text match filter</h3>
+        {{ column_select(form, "filter_text_column", "Keep rows where column", columns, "— no text filter —") }}
+        <input type="text" class="form-control mt-2" name="filter_text_value" maxlength="200"
+               placeholder="equals this value" value="{{ form.get('filter_text_value', '') }}"
+               aria-label="Text filter value">
+        <div class="form-text">Case-sensitive. Applied after text cleaning.</div>
+      </div>
+      <div class="col-12"><hr class="my-1"></div>
+      <div class="col-md-4">
+        {{ column_select(form, "sort_primary", "Sort by", columns, "— no sorting —") }}
+      </div>
+      <div class="col-md-4">
+        {{ column_select(form, "sort_secondary", "Then by (optional)", columns) }}
+      </div>
+      <div class="col-md-4">
+        {{ choice_select(form, "sort_direction", "Direction", [("asc", "Ascending (A→Z, 0→9)"), ("desc", "Descending (Z→A, 9→0)")]) }}
+      </div>
+    </div>
+  </section>
+
+  <section class="card shadow-sm mb-3">
+    <div class="card-header bg-white"><h2 class="h5 mb-0"><span class="section-number">7</span> New computed column</h2></div>
+    <div class="card-body row g-3 align-items-end">
+      <div class="col-md-3">
+        {{ column_select(form, "transform_source", "Source column", columns, "— none —") }}
+      </div>
+      <div class="col-md-3">
+        {{ choice_select(form, "transform_operation", "Operation", [
+            ("multiply", "Multiply by"), ("add", "Add"), ("subtract", "Subtract"), ("divide", "Divide by")]) }}
+      </div>
+      <div class="col-md-2">
+        <label class="form-label" for="transform_value">Value</label>
+        <input type="number" step="any" class="form-control" id="transform_value" name="transform_value"
+               value="{{ form.get('transform_value', '') }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="transform_new_name">New column name</label>
+        <input type="text" class="form-control" id="transform_new_name" name="transform_new_name" maxlength="64"
+               placeholder="e.g. amount_with_tax" value="{{ form.get('transform_new_name', '') }}">
+      </div>
+      <div class="col-12 form-text mt-1">The source column must be numeric (convert it in section 2 if needed).</div>
+    </div>
+  </section>
+
+  <section class="card shadow-sm mb-3">
+    <div class="card-header bg-white"><h2 class="h5 mb-0"><span class="section-number">8</span> Column names</h2></div>
+    <div class="card-body">
+      <p class="small text-muted">Applied last, so the options above use the original names. Duplicate names get a numeric suffix (e.g. <code>city_2</code>).</p>
+      {{ checkbox(form, "rename_strip", "Remove leading and trailing spaces") }}
+      {{ checkbox(form, "rename_lowercase", "Convert to lower case") }}
+      {{ checkbox(form, "rename_underscores", "Replace spaces with underscores") }}
+    </div>
+  </section>
+
+  <div class="d-flex justify-content-between align-items-center sticky-actions">
+    <a href="{{ url_for('main.overview') }}" class="btn btn-outline-secondary">← Back to overview</a>
+    <button type="submit" class="btn btn-primary btn-lg" data-loading-text="Cleaning…">Clean Data</button>
+  </div>
+</form>
+{% endblock %}

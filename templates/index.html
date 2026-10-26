@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf_field %}
+{% block title %}Upload{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <h1 class="h3 mb-2">Clean your data in four steps</h1>
+    <p class="text-muted mb-4">
+      Upload a CSV or Excel file, review its quality, choose cleaning options and download the result
+      together with a report of every change.
+    </p>
+
+    {% if meta %}
+    <div class="alert alert-info d-flex justify-content-between align-items-center">
+      <span>You are working on <strong>{{ meta.original_filename }}</strong>.</span>
+      <a class="btn btn-sm btn-primary" href="{{ url_for('main.overview') }}">Continue</a>
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <form method="post" action="{{ url_for('main.upload') }}" enctype="multipart/form-data"
+              class="needs-loading">
+          {{ csrf_field() }}
+          <label for="file" class="upload-zone">
+            <span class="upload-icon">⇪</span>
+            <span class="fw-semibold">Choose a .csv or .xlsx file</span>
+            <span class="text-muted small">Maximum size 10 MB. Only the first sheet of an Excel workbook is used.</span>
+            <input class="form-control mt-3" type="file" id="file" name="file"
+                   accept=".csv,.xlsx" required>
+          </label>
+          <div class="d-grid mt-3">
+            <button type="submit" class="btn btn-primary btn-lg" data-loading-text="Uploading…">
+              Upload and analyse
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="row g-3 mt-4 text-center small text-muted">
+      <div class="col-md-4"><strong class="d-block text-body">Private</strong>Your file is stored temporarily for your session and never shared.</div>
+      <div class="col-md-4"><strong class="d-block text-body">Non-destructive</strong>The original upload is kept so you can re-run cleaning with different options.</div>
+      <div class="col-md-4"><strong class="d-block text-body">Transparent</strong>Every change is listed in a downloadable JSON report.</div>
+    </div>
+  </div>
+</div>
+{% endblock %}

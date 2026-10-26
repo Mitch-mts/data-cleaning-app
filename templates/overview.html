@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_macros.html" import data_table, stat_card, csrf_field %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3 gap-2">
+  <div>
+    <h1 class="h3 mb-1">Dataset overview</h1>
+    <p class="text-muted mb-0">{{ meta.original_filename }}</p>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {{ stat_card("Rows", "{:,}".format(profile.rows)) }}
+  {{ stat_card("Columns", profile.columns) }}
+  {{ stat_card("Missing values", "{:,}".format(profile.missing_total)) }}
+  {{ stat_card("Duplicate rows", "{:,}".format(profile.duplicate_rows)) }}
+</div>
+
+{% if profile.warnings %}
+<div class="alert alert-warning">
+  <strong>Possible data type problems</strong>
+  <ul class="mb-0 mt-1">
+    {% for warning in profile.warnings %}<li>{{ warning }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('main.select_columns') }}">
+  {{ csrf_field() }}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        <h2 class="h5 mb-0">Columns</h2>
+        <span class="text-muted small">Tick the columns you want to clean. Unticked columns are kept unchanged.</span>
+      </div>
+      <div class="btn-group btn-group-sm">
+        <button type="button" class="btn btn-outline-secondary" data-check-all="columns">Select all</button>
+        <button type="button" class="btn btn-outline-secondary" data-uncheck-all="columns">Select none</button>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0 profile-table">
+        <thead class="table-light">
+          <tr>
+            <th scope="col">Clean</th>
+            <th scope="col">Column</th>
+            <th scope="col">Type</th>
+            <th scope="col" class="text-end">Missing</th>
+            <th scope="col" class="text-end">Unique</th>
+            <th scope="col" class="text-end">Min</th>
+            <th scope="col" class="text-end">Max</th>
+            <th scope="col" class="text-end">Mean</th>
+            <th scope="col" class="text-end">Median</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for col in profile.column_profiles %}
+          <tr class="{% if col.warning %}table-warning{% endif %}">
+            <td>
+              <input class="form-check-input" type="checkbox" name="columns" value="{{ col.name }}"
+                     id="col-{{ loop.index }}" {% if col.name in scope %}checked{% endif %}>
+            </td>
+            <td><label for="col-{{ loop.index }}" class="fw-semibold column-name">{{ col.name }}</label>
+              {% if col.warning %}<span class="badge text-bg-warning ms-1" title="{{ col.warning }}">mixed types</span>{% endif %}
+            </td>
+            <td><span class="badge text-bg-light border">{{ col.dtype }}</span></td>
+            <td class="text-end">
+              {{ col.missing }}
+              {% if col.missing %}<span class="text-muted small">({{ col.missing_pct }}%)</span>{% endif %}
+            </td>
+            <td class="text-end">{{ col.unique }}</td>
+            {% if col.stats %}
+              {% for key in ['min', 'max', 'mean', 'median'] %}
+              <td class="text-end">{{ col.stats[key]|cell if col.stats[key] is not none else '—' }}</td>
+              {% endfor %}
+            {% else %}
+              <td class="text-end text-muted" colspan="4">not numeric</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer bg-white text-end">
+      <button type="submit" class="btn btn-primary">Continue to cleaning options →</button>
+    </div>
+  </div>
+</form>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white"><h2 class="h5 mb-0">Data preview</h2></div>
+  <div class="card-body">{{ data_table(preview) }}</div>
+</div>
+{% endblock %}

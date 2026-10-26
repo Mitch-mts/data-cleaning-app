@@ -1,0 +1,16 @@
+ Customer ID ,Full Name,Email,Age,Signup Date,Purchase Amount,City,city ,Notes
+1, Alice Smith ,alice@example.com,34,2024-01-15,120.50,New York,NY,
+2,bob jones,bob@example.com,thirty,2024/02/20,85.00, Boston ,MA,
+3,CAROL WHITE,,29,2024-03-05,,Chicago,IL,vip
+4,David Brown,david@example.com,41,not a date,230.10,   ,,
+2,bob jones,bob@example.com,thirty,2024/02/20,85.00, Boston ,MA,
+5,Eve Black,eve@example.com,,2024-13-45,99999,Seattle,WA,
+6,frank green,frank@example.com,38,2024-04-01,150.00,Denver,CO,
+7,Grace Lee,grace@example,27,04/15/2024,95.25,Austin,TX,
+8,Henry Ford,henry@example.com,52,2024-05-10,abc,Detroit,MI,
+9,Ivy Chen,ivy@example.com,45,2024-06-01,175.00,,,
+10,Jack Wilson,jack@example.com,33,2024-06-15,110.00,Miami,FL,
+6,frank green,frank@example.com,38,2024-04-01,150.00,Denver,CO,
+11,Kim Park,kim@example.com,31,2024-07-01,140.00,Portland,OR,=HYPERLINK("http://example.com")
+12,Leo Martin,leo@example.com,-5,2024-07-20,130.00,Phoenix,AZ,
+13,Mia Lopez,mia@example.com,36.5,2024-08-02,160.00,Dallas,TX,

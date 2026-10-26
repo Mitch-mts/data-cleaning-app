@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% from "_macros.html" import data_table %}
+{% block title %}Results{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3 gap-2">
+  <div>
+    <h1 class="h3 mb-1">Cleaning results</h1>
+    <p class="text-muted mb-0">{{ meta.original_filename }}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-primary" href="{{ url_for('main.download_data', fmt='csv') }}">Download CSV</a>
+    <a class="btn btn-primary" href="{{ url_for('main.download_data', fmt='xlsx') }}">Download Excel</a>
+    <a class="btn btn-outline-primary" href="{{ url_for('main.download_report') }}">Download report (JSON)</a>
+  </div>
+</div>
+
+{% if report.errors %}
+<div class="alert alert-danger">
+  <strong>Some operations could not be performed</strong>
+  <ul class="mb-0 mt-1">{% for error in report.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% if report.warnings %}
+<div class="alert alert-warning">
+  <strong>Notes</strong>
+  <ul class="mb-0 mt-1">{% for warning in report.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+{% if report.summary.after.rows == 0 %}
+<div class="alert alert-warning">The cleaned dataset has no rows left. Try less aggressive options.</div>
+{% endif %}
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-5">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white"><h2 class="h5 mb-0">Before and after</h2></div>
+      <table class="table mb-0 align-middle">
+        <thead class="table-light">
+          <tr><th scope="col">Metric</th><th scope="col" class="text-end">Before</th><th scope="col" class="text-end">After</th><th scope="col" class="text-end">Change</th></tr>
+        </thead>
+        <tbody>
+          {% for row in comparison %}
+          <tr>
+            <td>{{ row.metric }}</td>
+            <td class="text-end">{{ "{:,}".format(row.before) }}</td>
+            <td class="text-end fw-semibold">{{ "{:,}".format(row.after) }}</td>
+            <td class="text-end {% if row.change < 0 %}text-success{% elif row.change > 0 %}text-primary{% else %}text-muted{% endif %}">
+              {{ "{:+,}".format(row.change) if row.change else "—" }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="card-body small text-muted">
+        Missing values handled by filling: <strong>{{ report.summary.missing_values_handled }}</strong>
+        {% if report.summary.columns_removed %}
+          · Columns removed: <strong>{{ report.summary.columns_removed|join(", ") }}</strong>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card shadow-sm h-100">
+      <div class="card-header bg-white"><h2 class="h5 mb-0">Operations performed</h2></div>
+      <ol class="list-group list-group-flush list-group-numbered">
+        {% for step in report.operations %}
+        <li class="list-group-item">
+          <span class="fw-semibold">{{ step.operation }}</span>
+          <div class="small">{{ step.description }}</div>
+          {% if step.columns %}<div class="small text-muted">Columns: {{ step.columns|join(", ") }}</div>{% endif %}
+          {% if step.rows_removed %}<span class="badge text-bg-danger">{{ step.rows_removed }} row(s) removed</span>{% endif %}
+          {% if step.columns_removed %}<span class="badge text-bg-danger">{{ step.columns_removed|length }} column(s) removed</span>{% endif %}
+          {% if step.missing_filled %}<span class="badge text-bg-success">{{ step.missing_filled }} value(s) filled</span>{% endif %}
+          {% if step.details.renamed %}
+          <div class="small mt-1">
+            {% for old, new in step.details.renamed.items() %}
+              <code>{{ old }}</code> → <code>{{ new }}</code>{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+        </li>
+        {% else %}
+        <li class="list-group-item text-muted">No operations were applied.</li>
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+</div>
+
+{% if report.conversion_failures %}
+<div class="card shadow-sm mb-4 border-warning">
+  <div class="card-header bg-white"><h2 class="h5 mb-0">Values that could not be converted</h2></div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr><th scope="col">Column</th><th scope="col">Target type</th><th scope="col" class="text-end">Invalid values</th><th scope="col">Action</th><th scope="col">Examples (row: value)</th></tr>
+      </thead>
+      <tbody>
+        {% for column, failure in report.conversion_failures.items() %}
+        <tr>
+          <td class="fw-semibold">{{ column }}</td>
+          <td>{{ failure.target_type }}</td>
+          <td class="text-end">{{ failure.invalid_count }}</td>
+          <td>{{ failure.action }}</td>
+          <td>
+            {% for example in failure.examples %}
+            <span class="outlier-value">{{ example.row }}: {{ example.value }}</span>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if report.outliers %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><h2 class="h5 mb-0">Outliers found (IQR)</h2></div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr><th scope="col">Column</th><th scope="col" class="text-end">Q1</th><th scope="col" class="text-end">Q3</th><th scope="col" class="text-end">Allowed range</th><th scope="col" class="text-end">Outliers</th><th scope="col">Flagged values (row: value)</th></tr>
+      </thead>
+      <tbody>
+        {% for column, info in report.outliers.items() %}
+        <tr class="{% if info.count %}table-danger{% endif %}">
+          <td class="fw-semibold">{{ column }}</td>
+          <td class="text-end">{{ info.q1|cell }}</td>
+          <td class="text-end">{{ info.q3|cell }}</td>
+          <td class="text-end">{{ info.lower_bound|cell }} to {{ info.upper_bound|cell }}</td>
+          <td class="text-end">{{ info.count }}</td>
+          <td>
+            {% for example in info.examples %}
+            <span class="outlier-value">{{ example.row }}: {{ example.value|cell }}</span>
+            {% else %}<span class="text-muted">none</span>{% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white"><h2 class="h5 mb-0">Cleaned data preview</h2></div>
+  <div class="card-body">{{ data_table(preview) }}</div>
+</div>
+
+<div class="d-flex justify-content-between">
+  <a href="{{ url_for('main.clean') }}" class="btn btn-outline-secondary">← Adjust options and clean again</a>
+</div>
+{% endblock %}

@@ -1,0 +1,86 @@
+{% macro data_table(preview) %}
+<p class="text-muted small mb-2">
+  Showing {{ preview.shown }} of {{ "{:,}".format(preview.total) }} rows.
+  Row numbers refer to the original file (1 = first data row).
+</p>
+<div class="table-responsive data-preview">
+  <table class="table table-sm table-striped table-bordered align-middle mb-0">
+    <thead class="table-light">
+      <tr>
+        <th scope="col" class="row-number">#</th>
+        {% for header in preview.headers %}<th scope="col">{{ header }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in preview.rows %}
+      <tr>
+        <th scope="row" class="row-number">{{ row.row_number }}</th>
+        {% for cell in row.cells %}
+          {% if cell is none %}
+          <td><span class="missing">missing</span></td>
+          {% else %}
+          <td>{{ cell }}</td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ preview.headers|length + 1 }}" class="text-center text-muted">No rows to display.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{% macro stat_card(label, value, hint=none) %}
+<div class="col-6 col-md-3">
+  <div class="stat-card">
+    <div class="stat-label">{{ label }}</div>
+    <div class="stat-value">{{ value }}</div>
+    {% if hint %}<div class="stat-hint">{{ hint }}</div>{% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{% macro csrf_field() %}
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+{% endmacro %}
+
+{% macro checkbox(form, name, label, help=none) %}
+<div class="form-check">
+  <input class="form-check-input" type="checkbox" id="{{ name }}" name="{{ name }}"
+         {% if form.get(name) == 'on' %}checked{% endif %}>
+  <label class="form-check-label" for="{{ name }}">{{ label }}</label>
+  {% if help %}<div class="form-text mt-0">{{ help }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro column_multiselect(form, name, label, options, help=none) %}
+{% set selected = form.getlist(name) %}
+<label class="form-label fw-semibold" for="{{ name }}">{{ label }}</label>
+<select class="form-select column-select" id="{{ name }}" name="{{ name }}" multiple
+        size="{{ [options|length, 6]|min }}">
+  {% for column in options %}
+  <option value="{{ column }}" {% if column in selected %}selected{% endif %}>{{ column }}</option>
+  {% endfor %}
+</select>
+<div class="form-text">{{ help or "Hold Ctrl (Windows) or Cmd (Mac) to select several columns." }}</div>
+{% endmacro %}
+
+{% macro column_select(form, name, label, options, empty_label="— none —") %}
+<label class="form-label" for="{{ name }}">{{ label }}</label>
+<select class="form-select" id="{{ name }}" name="{{ name }}">
+  <option value="">{{ empty_label }}</option>
+  {% for column in options %}
+  <option value="{{ column }}" {% if form.get(name) == column %}selected{% endif %}>{{ column }}</option>
+  {% endfor %}
+</select>
+{% endmacro %}
+
+{% macro choice_select(form, name, label, choices) %}
+<label class="form-label" for="{{ name }}">{{ label }}</label>
+<select class="form-select" id="{{ name }}" name="{{ name }}">
+  {% for value, text in choices %}
+  <option value="{{ value }}" {% if (form.get(name) or choices[0][0]) == value %}selected{% endif %}>{{ text }}</option>
+  {% endfor %}
+</select>
+{% endmacro %}
