@@ -35,7 +35,11 @@ Data-Cleaning-App/
 ├── services/
 │   ├── file_service.py          # upload validation, reading, exporting, temp workspaces
 │   ├── profiling_service.py     # dataset statistics, mixed-type warnings, previews
-│   ├── cleaning_service.py      # cleaning operations + pipeline
+│   ├── cleaning_service.py      # public imports; the operations live in cleaning/
+│   ├── cleaning/
+│   │   ├── pipeline.py          # runs the selected operations in order
+│   │   ├── text.py  missing.py  duplicates.py  types.py
+│   │   ├── outliers.py  filters.py  transform.py  names.py
 │   ├── options_service.py       # server-side validation of the cleaning form
 │   └── report_service.py        # before/after summary and JSON report
 ├── templates/
@@ -135,7 +139,8 @@ cleaning, type conversion, outliers and missing-value handling to those columns.
    All errors are shown at once.
 2. `cleaning_service.run_cleaning_pipeline` applies only the selected operations in a fixed
    order: text, data types, missing values, duplicates, outliers, filters, computed column,
-   sorting, column names. Renaming runs last so every option can refer to the original
+   sorting, column names. That checklist is `services/cleaning/pipeline.py`; each operation
+   is its own file beside it. Renaming runs last so every option can refer to the original
    column names.
 3. Each operation returns a new DataFrame plus a `StepRecord` saying what changed. If one
    step fails (for example, sorting a column that mixes numbers and text), its error is

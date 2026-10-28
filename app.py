@@ -51,15 +51,22 @@ bp = Blueprint("main", __name__)
 # Workspace helpers
 # --------------------------------------------------------------------------- #
 def _root() -> Path:
+    """Return the directory that holds every session workspace."""
     return Path(current_app.config["WORKSPACE_ROOT"])
 
 
 def _workspace() -> Path | None:
+    """Return this session's workspace directory, or ``None`` if none exists."""
     return file_service.get_workspace(_root(), session.get("workspace_id"))
 
 
 def _load_dataset() -> tuple[Path, dict[str, Any], pd.DataFrame] | None:
-    """Return ``(workspace, meta, original_df)`` for this session, or ``None``."""
+    """Load the uploaded dataset for the current session.
+
+    Returns ``(workspace, meta, original_df)`` when the workspace, its
+    metadata, and the original file are all readable. Returns ``None`` when
+    the session has no workspace or the stored file cannot be loaded.
+    """
     workspace = _workspace()
     if workspace is None:
         return None
@@ -74,20 +81,30 @@ def _load_dataset() -> tuple[Path, dict[str, Any], pd.DataFrame] | None:
 
 
 def _no_dataset_redirect():
+    """Warn that no dataset is available and send the user back to the upload page."""
     flash("Please upload a dataset first. Uploaded files expire after a period of inactivity.", "warning")
     return redirect(url_for("main.index"))
 
 
 def _form_to_dict(form: MultiDict) -> dict[str, list[str]]:
+    """Turn a submitted form into a JSON-serializable dict of field values.
+
+    The CSRF token is left out so it is never written to disk.
+    """
     return {key: form.getlist(key) for key in form.keys() if key != "csrf_token"}
 
 
 def _dict_to_form(data: dict[str, list[str]]) -> MultiDict:
+    """Rebuild a form ``MultiDict`` from values previously saved as JSON."""
     return MultiDict([(key, value) for key, values in data.items() for value in values])
 
 
 def _default_clean_form(profiles: dict[str, dict[str, Any]], scope: list[str]) -> MultiDict:
-    """Pre-select text columns, skipping numbers stored as text (mixed-type columns)."""
+    """Build the initial cleaning form when the user has not saved options yet.
+
+    Text columns in ``scope`` are pre-selected. Columns flagged as mixed type
+    (numbers stored as text) are left unchecked.
+    """
     text_columns = [c for c in scope if profiles[c]["is_text"] and not profiles[c]["warning"]]
     return MultiDict([("text_columns", c) for c in text_columns])
 
@@ -95,6 +112,11 @@ def _default_clean_form(profiles: dict[str, dict[str, Any]], scope: list[str]) -
 def _run_saved_cleaning(
     workspace: Path, meta: dict[str, Any], df: pd.DataFrame
 ) -> PipelineResult | None:
+    """Re-apply the cleaning options saved for this workspace.
+
+    Returns the pipeline result, or ``None`` when no options are saved or they
+    no longer parse against the current columns and scope.
+    """
     saved = file_service.load_json(workspace, FORM_FILE)
     if saved is None:
         return None
@@ -106,6 +128,12 @@ def _run_saved_cleaning(
 
 
 def _download_stem(meta: dict[str, Any]) -> str:
+    """Build a safe filename stem from the original upload name.
+
+    Characters outside letters, digits, underscores, and hyphens are replaced
+    with underscores, and the result is capped at 50 characters. Falls back to
+    ``data`` when nothing usable remains.
+    """
     stem = Path(meta.get("original_filename", "data")).stem
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_", stem).strip("_")[:50]
     return stem or "data"
@@ -116,6 +144,7 @@ def _download_stem(meta: dict[str, Any]) -> str:
 # --------------------------------------------------------------------------- #
 @bp.get("/")
 def index():
+    """Show the upload page and drop workspaces that have sat unused too long."""
     file_service.cleanup_expired_workspaces(_root(), current_app.config["WORKSPACE_MAX_AGE_SECONDS"])
     workspace = _workspace()
     meta = file_service.load_json(workspace, META_FILE) if workspace else None
@@ -124,6 +153,11 @@ def index():
 
 @bp.post("/upload")
 def upload():
+    """Accept a CSV or Excel upload, store it in a new workspace, and open the overview.
+
+    Replaces any workspace already tied to this session. Invalid or unreadable
+    files are rejected with a flash message and the user stays on the upload page.
+    """
     max_bytes = current_app.config["MAX_UPLOAD_BYTES"]
     uploaded = request.files.get("file")
     if uploaded is None or not uploaded.filename:
@@ -162,6 +196,7 @@ def upload():
 
 @bp.get("/overview")
 def overview():
+    """Show column profiles, a row preview, and the form for choosing columns to clean."""
     loaded = _load_dataset()
     if loaded is None:
         return _no_dataset_redirect()
@@ -178,6 +213,11 @@ def overview():
 
 @bp.post("/overview")
 def select_columns():
+    """Save the columns the user chose to clean and continue to the options page.
+
+    Changing the selection discards any previously saved cleaning form and
+    report, so later results cannot describe a different set of columns.
+    """
     loaded = _load_dataset()
     if loaded is None:
         return _no_dataset_redirect()
@@ -196,6 +236,13 @@ def select_columns():
 
 @bp.route("/clean", methods=["GET", "POST"])
 def clean():
+    """Show the cleaning form, or run the pipeline and store the report.
+
+    A GET restores the last saved options, or a default selection of text
+    columns when nothing has been saved. A POST validates the form, cleans the
+    data, and redirects to the results page. Invalid options are shown again
+    on the form with a 400 status.
+    """
     loaded = _load_dataset()
     if loaded is None:
         return _no_dataset_redirect()
@@ -239,6 +286,10 @@ def clean():
 
 @bp.get("/results")
 def results():
+    """Show the cleaning report, a before/after comparison, and a cleaned-data preview.
+
+    Redirects to the cleaning form when no successful run has been saved yet.
+    """
     loaded = _load_dataset()
     if loaded is None:
         return _no_dataset_redirect()
@@ -260,6 +311,12 @@ def results():
 
 @bp.get("/download/data/<fmt>")
 def download_data(fmt: str):
+    """Send the cleaned dataset as a CSV or Excel attachment.
+
+    The file is rebuilt from the saved options rather than stored on disk.
+    An unknown format returns 404. A failed export sends the user back to the
+    results page.
+    """
     if fmt not in ("csv", "xlsx"):
         abort(404)
     loaded = _load_dataset()
@@ -289,6 +346,7 @@ def download_data(fmt: str):
 
 @bp.get("/download/report")
 def download_report():
+    """Send the saved cleaning report as a JSON attachment."""
     workspace = _workspace()
     meta = file_service.load_json(workspace, META_FILE) if workspace else None
     report = file_service.load_json(workspace, REPORT_FILE) if workspace else None
@@ -305,6 +363,7 @@ def download_report():
 
 @bp.post("/reset")
 def reset():
+    """Delete this session's workspace and return to the upload page."""
     file_service.delete_workspace(_root(), session.pop("workspace_id", None))
     flash("Your data was removed from the server.", "info")
     return redirect(url_for("main.index"))
@@ -314,13 +373,18 @@ def reset():
 # Application factory
 # --------------------------------------------------------------------------- #
 def _csrf_token() -> str:
+    """Return the session CSRF token, creating one the first time it is needed."""
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_urlsafe(32)
     return session["csrf_token"]
 
 
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
-    """Create and configure the Flask application."""
+    """Create and configure the Flask application.
+
+    Sets upload limits, workspace storage, session cookies, CSRF checks,
+    security headers, and error pages. ``test_config`` overrides those defaults.
+    """
     app = Flask(__name__)
     app.config.update(
         SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
@@ -342,6 +406,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.before_request
     def protect_against_csrf():
+        """Reject POST requests whose CSRF token does not match the session."""
         if request.method == "POST":
             expected = session.get("csrf_token")
             sent = request.form.get("csrf_token", "")
@@ -350,6 +415,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.after_request
     def set_security_headers(response):
+        """Add baseline browser security headers to every response."""
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")
@@ -364,17 +430,23 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
 
     @app.errorhandler(RequestEntityTooLarge)
     def file_too_large(_error):
+        """Tell the user the upload exceeded the size limit and return to the upload page."""
         limit_mb = app.config["MAX_UPLOAD_BYTES"] / (1024 * 1024)
         flash(f"The file is too large. The limit is {limit_mb:g} MB.", "danger")
         return redirect(url_for("main.index"))
 
     @app.errorhandler(HTTPException)
     def http_error(error: HTTPException):
+        """Render the shared error page for HTTP exceptions such as 404 and 400."""
         return render_template("error.html", error=error), error.code
 
     @app.errorhandler(Exception)
     def unexpected_error(error: Exception):
-        # Exception messages can quote cell values, so tracebacks are debug-only.
+        """Log an unexpected failure and show a generic error page.
+
+        The exception message is left out of the response because it can
+        contain cell values. The traceback is logged only in debug mode.
+        """
         logger.error("Unhandled error: %s", type(error).__name__, exc_info=app.debug)
         return render_template("error.html", error=None), 500
 
